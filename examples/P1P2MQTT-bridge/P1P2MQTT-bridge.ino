@@ -99,7 +99,7 @@ char sprint_value[ SPRINT_VALUE_LEN + 29 ] = "* [ESP]                     ";
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
-#include <AsyncMqttClient.h> // should be included after include P1P2_Config which defines MQTT_MIN_FREE_MEMORY
+#include <espMqttClient.h> // should be included after include P1P2_Config which defines EMC_MIN_FREE_MEMORY
 
 #ifdef DEBUG_OVER_SERIAL
 #define Serial_print(...) Serial.print(__VA_ARGS__)
@@ -897,7 +897,7 @@ bool initEthernet()
 }
 #endif /* ETHERNET */
 
-AsyncMqttClient mqttClient;
+espMqttClientSecure mqttClient;
 
 uint32_t espUptime = 0;
 bool shouldSaveConfig = false;
@@ -1057,11 +1057,11 @@ volatile bool Skipped = false;
 bool clientPublishMqtt(const char* key, uint8_t qos, bool retain, const char* value = nullptr) {
   if (mqttConnected) {
     byte i = 0;
-    while ((ESP.getMaxFreeBlockSize() < MQTT_MIN_FREE_MEMORY) && (i++ < (qos ? MAXWAIT_QOS : MAXWAIT))) {
+    while ((ESP.getMaxFreeBlockSize() < EMC_MIN_FREE_MEMORY) && (i++ < (qos ? MAXWAIT_QOS : MAXWAIT))) {
       Mqtt_waitCounter++;
       delay(5);
     }
-    if (ESP.getMaxFreeBlockSize() < MQTT_MIN_FREE_MEMORY) {
+    if (ESP.getMaxFreeBlockSize() < EMC_MIN_FREE_MEMORY) {
       Mqtt_msgSkipLowMem++;
       if (!Skipped) delayedPrintfTopicS("--(mqtt low mem skip)--");
       Skipped = true;
@@ -1662,7 +1662,7 @@ void onMqttConnect(bool sessionPresent) {
   mqttConnected = 2;
 }
 
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+void onMqttDisconnect(espMqttClientTypes::DisconnectReason reason) {
   delayedPrintfTopicS("onMqttDisconnect() reason %d", reason);
   Mqtt_disconnects++;
   mqttConnected = 0;
@@ -2830,9 +2830,7 @@ void handleCommand(char* cmdString) {
 
 bool OTAbusy = 0;
 
-void onMqttMessage(char* topic, char* payload, const AsyncMqttClientMessageProperties& properties,
-                   const size_t& len, const size_t& index, const size_t& total) {
-  (void) payload;
+void onMqttMessage(const espMqttClientTypes::MessageProperties& properties, const char* topic, const uint8_t* payload, size_t len, size_t index, size_t total) {
   static bool MQTT_drop_remainder = false;
   static size_t index_expected = 0;
 
@@ -3382,6 +3380,8 @@ void setup() {
   mqttClient.setServer(EE.mqttServer, EE.mqttPort);
   mqttClient.setClientId(EE.mqttClientName);
   mqttClient.setCredentials((EE.mqttUser[0] == '\0') ? 0 : EE.mqttUser, (EE.mqttPassword[0] == '\0') ? 0 : EE.mqttPassword);
+  mqttClient.setInsecure();
+  mqttClient._client.client.setBufferSizes(512, 512);
 
   topicCharSpecific('L');
   strlcpy(willTopic, mqttTopic, WILL_TOPIC_LEN);
@@ -3394,6 +3394,7 @@ void setup() {
   Serial_print(F("* [ESP] Port ")); Serial_println(EE.mqttPort);
 
   delay(100);
+  mqttClient.loop();
   mqttClient.connect();
   delay(500);
 
@@ -3420,6 +3421,7 @@ void setup() {
 #define MQTT_RETRIES 20 // 10s timeout
   byte connectTimeout = MQTT_RETRIES;
   while (!mqttClient.connected()) {
+    mqttClient.loop();
     mqttClient.connect();
     if (mqttClient.connected()) {
       Serial_println(F("* [ESP] MQTT client connected after retry"));
@@ -3524,6 +3526,7 @@ void setup() {
       default                : printfTopicS("OTA unknown error");
                                break;
     }
+    mqttClient.loop();
     mqttClient.connect();
     ignoreRemainder = 2;
     OTAbusy = 0;
@@ -3671,6 +3674,8 @@ void loop() {
 #ifdef WEBSERVER
   httpServer.handleClient();
 #endif /* WEBSERVER */
+
+  mqttClient.loop();
 
   // ESP-uptime and loop timing
   uint32_t currMillis = millis();
@@ -3836,6 +3841,7 @@ void loop() {
   if (WiFi.isConnected() || ethernetConnected) {  // for now: use initial ethernet connection status instead (ethernet cable disconnect is thus not detected)
     if (!mqttClient.connected()) {
       if (espUptime > reconnectTime) {
+        mqttClient.loop();
         mqttClient.connect();
         for (byte i = 0; i < 10; i++) { delay(50); if (mqttConnected == 2) break; }
         if (mqttConnected == 2) {

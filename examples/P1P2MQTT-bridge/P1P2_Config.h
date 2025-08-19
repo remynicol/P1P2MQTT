@@ -185,7 +185,7 @@
 // no need to change these:
 #define RESET_PIN 5 // GPIO_5 on ESP-12F pin 20 connected to ATmega328P's reset line
 #define RX_BUFFER_SIZE 4096 // to avoid serial buffer overruns (512 is too small)
-#define MQTT_MIN_FREE_MEMORY 6000 // Must be more than 4kB, MQTT messages will not be transmitted if available memory is below this value
+#define EMC_MIN_FREE_MEMORY 6000 // Must be more than 4kB, MQTT messages will not be transmitted if available memory is below this value
 #define MQTT_QOS_HEX 0 // QOS = 1 is not needed for hex data messages
 #define MQTT_QOS_DATA 0 // QOS = 1 is too slow for regular data messages, only use for certain messages related to HA controls
 #define MQTT_QOS_SIGNAL 0 // QOS = 1 is not needed for textual messages
